@@ -29,9 +29,7 @@ export default function LoginPage() {
         if (username && !email) {
           // First, check if this username exists and get the user's actual email
           const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('email, approved')
-            .eq('username', username)
+            .rpc('get_email_by_username', { username_input: username })
             .single()
 
           if (profileError || !profile) {
@@ -72,13 +70,10 @@ export default function LoginPage() {
         }
       } else {
         // Signup mode - check if username already exists
-        const { data: existingUser } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('username', username)
-          .single()
+        const { data: usernameExists } = await supabase
+          .rpc('check_username_exists', { username_input: username })
 
-        if (existingUser) {
+        if (usernameExists) {
           throw new Error('ชื่อผู้ใช้นี้ถูกใช้งานแล้ว กรุณาเลือกชื่อผู้ใช้อื่น')
         }
 
