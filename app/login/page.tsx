@@ -37,11 +37,12 @@ export default function LoginPage() {
           }
 
           // Check if user is approved
-          if (!profile.approved) {
+          // Cast profile to any to avoid TypeScript error since RPC types might not be generated yet
+          if (!(profile as any).approved) {
             throw new Error('บัญชีของคุณยังไม่ได้รับการอนุมัติจากผู้ดูแลระบบ')
           }
 
-          loginEmail = profile.email
+          loginEmail = (profile as any).email
         }
 
         const { error } = await supabase.auth.signInWithPassword({
