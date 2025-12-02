@@ -14,9 +14,11 @@ export default function StudentPage() {
   const [lyrics, setLyrics] = useState('')
   const [style, setStyle] = useState('')
   const [vocalGender, setVocalGender] = useState<'f' | 'm'>('f')
+  const [sunoModel, setSunoModel] = useState('V4_5ALL')
   const [generating, setGenerating] = useState(false)
   const [generatingLyrics, setGeneratingLyrics] = useState(false)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  const [deletingSongId, setDeletingSongId] = useState<string | null>(null)
 
   const router = useRouter()
   const supabase = createClient()
@@ -163,7 +165,7 @@ export default function StudentPage() {
           style,
           vocalGender,
           instrumental: false,
-          model: 'V5',
+          model: sunoModel,
         }),
       })
 
@@ -213,6 +215,30 @@ export default function StudentPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  const deleteSong = async (songId: string) => {
+    if (!confirm('คุณต้องการลบเพลงนี้หรือไม่?')) {
+      return
+    }
+
+    setDeletingSongId(songId)
+    try {
+      const response = await fetch(`/api/songs/${songId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        loadSongs()
+      } else {
+        const error = await response.json()
+        alert('เกิดข้อผิดพลาด: ' + error.error)
+      }
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาด: ' + error.message)
+    } finally {
+      setDeletingSongId(null)
+    }
   }
 
   return (
@@ -320,6 +346,26 @@ export default function StudentPage() {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  6. เวอร์ชัน Suno
+                </label>
+                <select
+                  value={sunoModel}
+                  onChange={(e) => setSunoModel(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="V4_5ALL">V4.5 ALL (แนะนำ - ดีที่สุด)</option>
+                  <option value="V5">V5 (ใหม่ล่าสุด)</option>
+                  <option value="V4_5">V4.5</option>
+                  <option value="V4">V4 (คลาสสิก)</option>
+                  <option value="V3_5">V3.5</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  V4.5 ALL เหมาะกับเพลงทั่วไป เสียงร้องชัดเจน คุณภาพสูงสุด
+                </p>
+              </div>
+
               <button
                 onClick={generateSong}
                 disabled={generating || !title || !lyrics || !style || !profile || profile.credits < 1}
@@ -405,9 +451,18 @@ export default function StudentPage() {
                       </p>
                     )}
 
-                    <p className="text-xs text-gray-400 mt-2">
-                      สร้างเมื่อ: {new Date(song.created_at).toLocaleString('th-TH')}
-                    </p>
+                    <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
+                      <p className="text-xs text-gray-400">
+                        สร้างเมื่อ: {new Date(song.created_at).toLocaleString('th-TH')}
+                      </p>
+                      <button
+                        onClick={() => deleteSong(song.id)}
+                        disabled={deletingSongId === song.id}
+                        className="text-xs text-red-500 hover:text-red-700 hover:underline disabled:opacity-50"
+                      >
+                        {deletingSongId === song.id ? 'กำลังลบ...' : '🗑️ ลบเพลง'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

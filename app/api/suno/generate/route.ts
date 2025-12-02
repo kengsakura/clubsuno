@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     // Get request body
-    const { title, lyrics, style, instrumental = false, model = 'V5', vocalGender = 'f' } = await request.json()
+    const { title, lyrics, style, instrumental = false, model = 'V4_5ALL', vocalGender = 'f' } = await request.json()
 
     // Get settings
     const { data: settings } = await supabase

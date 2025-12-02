@@ -226,6 +226,9 @@ export default function LoginPage() {
               required
               minLength={6}
             />
+            {mode === 'signup' && (
+              <p className="text-xs text-gray-500 mt-1">รหัสผ่านอย่างน้อย 6 ตัวอักษร</p>
+            )}
           </div>
 
           {error && (
