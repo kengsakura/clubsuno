@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Profile, Song } from '@/lib/types'
+import { Profile, Song, SongType } from '@/lib/types'
+
+type CreationMode = 'original' | 'cover'
 
 export default function StudentPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -19,6 +21,19 @@ export default function StudentPage() {
   const [generatingLyrics, setGeneratingLyrics] = useState(false)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
   const [deletingSongId, setDeletingSongId] = useState<string | null>(null)
+
+  // Cover mode states
+  const [creationMode, setCreationMode] = useState<CreationMode>('original')
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [downloadedAudioUrl, setDownloadedAudioUrl] = useState<string | null>(null)
+  const [coverTitle, setCoverTitle] = useState('')
+  const [coverStyle, setCoverStyle] = useState('')
+  const [coverLyrics, setCoverLyrics] = useState('')
+  const [coverInstrumental, setCoverInstrumental] = useState(false)
+  const [coverVocalGender, setCoverVocalGender] = useState<'f' | 'm'>('f')
+  const [coverModel, setCoverModel] = useState('V4_5ALL')
+  const [generatingCover, setGeneratingCover] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -241,6 +256,99 @@ export default function StudentPage() {
     }
   }
 
+  // Cover mode functions
+  const downloadFromYoutube = async () => {
+    if (!youtubeUrl.trim()) {
+      alert('กรุณาใส่ YouTube URL')
+      return
+    }
+
+    setDownloading(true)
+    setDownloadedAudioUrl(null)
+
+    try {
+      const response = await fetch('/api/youtube/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl, pitchShift: 3 }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDownloadedAudioUrl(data.audioUrl)
+        alert('ดาวน์โหลดเสร็จแล้ว! เสียงถูกปรับ pitch +3 semitones')
+      } else {
+        const error = await response.json()
+        alert('เกิดข้อผิดพลาด: ' + error.error)
+      }
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาด: ' + error.message)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const generateCover = async () => {
+    if (!downloadedAudioUrl) {
+      alert('กรุณาดาวน์โหลดเพลงจาก YouTube ก่อน')
+      return
+    }
+
+    if (!coverTitle.trim() || !coverStyle.trim()) {
+      alert('กรุณากรอกชื่อเพลงและสไตล์')
+      return
+    }
+
+    if (!coverInstrumental && !coverLyrics.trim()) {
+      alert('กรุณากรอกเนื้อร้อง หรือเลือก Instrumental')
+      return
+    }
+
+    setGeneratingCover(true)
+
+    try {
+      const response = await fetch('/api/cover/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uploadUrl: downloadedAudioUrl,
+          title: coverTitle,
+          style: coverStyle,
+          prompt: coverLyrics,
+          customMode: true,
+          instrumental: coverInstrumental,
+          model: coverModel,
+          vocalGender: coverVocalGender,
+          sourceYoutubeUrl: youtubeUrl,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentTaskId(data.taskId)
+        alert('เริ่มสร้าง Cover แล้ว! กรุณารอสักครู่...')
+
+        // Reset cover form
+        setYoutubeUrl('')
+        setDownloadedAudioUrl(null)
+        setCoverTitle('')
+        setCoverStyle('')
+        setCoverLyrics('')
+        setCoverInstrumental(false)
+
+        loadProfile()
+        loadSongs()
+      } else {
+        const error = await response.json()
+        alert('เกิดข้อผิดพลาด: ' + error.error)
+      }
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาด: ' + error.message)
+    } finally {
+      setGeneratingCover(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm">
@@ -268,118 +376,288 @@ export default function StudentPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Song Creation Form */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">สร้างเพลงใหม่</h2>
-
-            {/* AI Generation */}
-            <div className="mb-6 p-4 bg-purple-50 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                1. เจนเนื้อเพลงด้วย AI (ไม่บังคับ)
-              </label>
-              <textarea
-                value={theme}
-                onChange={(e) => setTheme(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
-                rows={2}
-                placeholder="เช่น: เพลงเกี่ยวกับธรรมชาติที่สงบ"
-              />
+            {/* Mode Tabs */}
+            <div className="flex mb-6 border-b border-gray-200">
               <button
-                onClick={generateLyrics}
-                disabled={generatingLyrics || !theme.trim()}
-                className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCreationMode('original')}
+                className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${creationMode === 'original'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  : 'text-gray-500 hover:text-gray-700'
+                  }`}
               >
-                {generatingLyrics ? 'กำลังเจนเนื้อเพลง...' : 'เจนเนื้อเพลงด้วย AI'}
+                🎵 สร้างเพลงใหม่
+              </button>
+              <button
+                onClick={() => setCreationMode('cover')}
+                className={`flex-1 py-3 px-4 text-center font-medium transition-colors ${creationMode === 'cover'
+                  ? 'text-orange-600 border-b-2 border-orange-600'
+                  : 'text-gray-500 hover:text-gray-700'
+                  }`}
+              >
+                🎤 Cover เพลง
               </button>
             </div>
 
-            {/* Manual Input */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  2. ชื่อเพลง
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  placeholder="ชื่อเพลง"
-                />
-              </div>
+            {creationMode === 'original' ? (
+              <>
+                {/* AI Generation */}
+                <div className="mb-6 p-4 bg-purple-50 rounded-lg">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    1. เจนเนื้อเพลงด้วย AI (ไม่บังคับ)
+                  </label>
+                  <textarea
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
+                    rows={2}
+                    placeholder="เช่น: เพลงเกี่ยวกับธรรมชาติที่สงบ"
+                  />
+                  <button
+                    onClick={generateLyrics}
+                    disabled={generatingLyrics || !theme.trim()}
+                    className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {generatingLyrics ? 'กำลังเจนเนื้อเพลง...' : 'เจนเนื้อเพลงด้วย AI'}
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  3. เนื้อเพลง
-                </label>
-                <textarea
-                  value={lyrics}
-                  onChange={(e) => setLyrics(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  rows={8}
-                  placeholder="[INTRO] ... [VERSE 1] ... [CHORUS] ..."
-                />
-              </div>
+                {/* Manual Input */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      2. ชื่อเพลง
+                    </label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="ชื่อเพลง"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  4. สไตล์เพลง
-                </label>
-                <input
-                  type="text"
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                  placeholder="indie pop, dreamy, acoustic"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      3. เนื้อเพลง
+                    </label>
+                    <textarea
+                      value={lyrics}
+                      onChange={(e) => setLyrics(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                      rows={8}
+                      placeholder="[INTRO] ... [VERSE 1] ... [CHORUS] ..."
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  5. เพศเสียง
-                </label>
-                <select
-                  value={vocalGender}
-                  onChange={(e) => setVocalGender(e.target.value as 'f' | 'm')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      4. สไตล์เพลง
+                    </label>
+                    <input
+                      type="text"
+                      value={style}
+                      onChange={(e) => setStyle(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                      placeholder="indie pop, dreamy, acoustic"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      5. เพศเสียง
+                    </label>
+                    <select
+                      value={vocalGender}
+                      onChange={(e) => setVocalGender(e.target.value as 'f' | 'm')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="f">หญิง (Female)</option>
+                      <option value="m">ชาย (Male)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      6. เวอร์ชัน Suno
+                    </label>
+                    <select
+                      value={sunoModel}
+                      onChange={(e) => setSunoModel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="V4_5ALL">V4.5 ALL (แนะนำ - ดีที่สุด)</option>
+                      <option value="V5">V5 (ใหม่ล่าสุด)</option>
+                      <option value="V4_5">V4.5</option>
+                      <option value="V4">V4 (คลาสสิก)</option>
+                      <option value="V3_5">V3.5</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      V4.5 ALL เหมาะกับเพลงทั่วไป เสียงร้องชัดเจน คุณภาพสูงสุด
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={generateSong}
+                    disabled={generating || !title || !lyrics || !style || !profile || profile.credits < 1}
+                    className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {generating ? 'กำลังสร้างเพลง...' : 'สร้างเพลง (ใช้เครดิต)'}
+                  </button>
+
+                  {profile && profile.credits < 1 && (
+                    <p className="text-sm text-red-600 text-center">
+                      เครดิตไม่เพียงพอ กรุณาติดต่อครูเพื่อเติมเครดิต
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Cover Mode Form */
+              <div className="space-y-4">
+                {/* YouTube URL Input */}
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    1. ดาวน์โหลดเพลงจาก YouTube
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      placeholder="https://www.youtube.com/watch?v=..."
+                    />
+                    <button
+                      onClick={downloadFromYoutube}
+                      disabled={downloading || !youtubeUrl.trim()}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {downloading ? '⏳ กำลังดาวน์โหลด...' : '⬇️ ดาวน์โหลด'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    เสียงจะถูกปรับ pitch +3 semitones อัตโนมัติ (ไฟล์ต้องไม่เกิน 8 นาที)
+                  </p>
+                </div>
+
+                {/* Audio Preview */}
+                {downloadedAudioUrl && (
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ✅ ไฟล์เสียงที่ดาวน์โหลด (pitch +3)
+                    </label>
+                    <audio controls className="w-full">
+                      <source src={downloadedAudioUrl} type="audio/mpeg" />
+                      Your browser does not support the audio element.
+                    </audio>
+                  </div>
+                )}
+
+                {/* Cover Details */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    2. ชื่อเพลง Cover
+                  </label>
+                  <input
+                    type="text"
+                    value={coverTitle}
+                    onChange={(e) => setCoverTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    placeholder="ชื่อเพลง Cover"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    3. สไตล์เพลง
+                  </label>
+                  <input
+                    type="text"
+                    value={coverStyle}
+                    onChange={(e) => setCoverStyle(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    placeholder="pop, rock, jazz, ballad..."
+                  />
+                </div>
+
+                {/* Instrumental Toggle */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="instrumental"
+                    checked={coverInstrumental}
+                    onChange={(e) => setCoverInstrumental(e.target.checked)}
+                    className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                  />
+                  <label htmlFor="instrumental" className="text-sm font-medium text-gray-700">
+                    Instrumental (ไม่มีเนื้อร้อง)
+                  </label>
+                </div>
+
+                {/* Lyrics (only if not instrumental) */}
+                {!coverInstrumental && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      4. เนื้อร้อง
+                    </label>
+                    <textarea
+                      value={coverLyrics}
+                      onChange={(e) => setCoverLyrics(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      rows={6}
+                      placeholder="ใส่เนื้อร้องที่ต้องการ..."
+                    />
+                  </div>
+                )}
+
+                {/* Vocal Gender */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    5. เพศเสียง
+                  </label>
+                  <select
+                    value={coverVocalGender}
+                    onChange={(e) => setCoverVocalGender(e.target.value as 'f' | 'm')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="f">หญิง (Female)</option>
+                    <option value="m">ชาย (Male)</option>
+                  </select>
+                </div>
+
+                {/* Model */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    6. เวอร์ชัน Suno
+                  </label>
+                  <select
+                    value={coverModel}
+                    onChange={(e) => setCoverModel(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  >
+                    <option value="V4_5ALL">V4.5 ALL (แนะนำ)</option>
+                    <option value="V5">V5 (ใหม่ล่าสุด)</option>
+                    <option value="V4_5">V4.5</option>
+                    <option value="V4">V4</option>
+                  </select>
+                </div>
+
+                {/* Generate Button */}
+                <button
+                  onClick={generateCover}
+                  disabled={generatingCover || !downloadedAudioUrl || !coverTitle || !coverStyle || (!coverInstrumental && !coverLyrics) || !profile || profile.credits < 1}
+                  className="w-full bg-orange-600 text-white py-3 rounded-lg font-semibold hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="f">หญิง (Female)</option>
-                  <option value="m">ชาย (Male)</option>
-                </select>
+                  {generatingCover ? 'กำลังสร้าง Cover...' : '🎤 สร้าง Cover (ใช้เครดิต)'}
+                </button>
+
+                {profile && profile.credits < 1 && (
+                  <p className="text-sm text-red-600 text-center">
+                    เครดิตไม่เพียงพอ กรุณาติดต่อครูเพื่อเติมเครดิต
+                  </p>
+                )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  6. เวอร์ชัน Suno
-                </label>
-                <select
-                  value={sunoModel}
-                  onChange={(e) => setSunoModel(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="V4_5ALL">V4.5 ALL (แนะนำ - ดีที่สุด)</option>
-                  <option value="V5">V5 (ใหม่ล่าสุด)</option>
-                  <option value="V4_5">V4.5</option>
-                  <option value="V4">V4 (คลาสสิก)</option>
-                  <option value="V3_5">V3.5</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  V4.5 ALL เหมาะกับเพลงทั่วไป เสียงร้องชัดเจน คุณภาพสูงสุด
-                </p>
-              </div>
-
-              <button
-                onClick={generateSong}
-                disabled={generating || !title || !lyrics || !style || !profile || profile.credits < 1}
-                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {generating ? 'กำลังสร้างเพลง...' : 'สร้างเพลง (ใช้เครดิต)'}
-              </button>
-
-              {profile && profile.credits < 1 && (
-                <p className="text-sm text-red-600 text-center">
-                  เครดิตไม่เพียงพอ กรุณาติดต่อครูเพื่อเติมเครดิต
-                </p>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Songs List */}
@@ -400,23 +678,22 @@ export default function StudentPage() {
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-semibold text-lg">{song.title}</h3>
                       <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          song.status === 'completed'
-                            ? 'bg-green-100 text-green-800'
-                            : song.status === 'generating'
+                        className={`px-2 py-1 text-xs rounded-full ${song.status === 'completed'
+                          ? 'bg-green-100 text-green-800'
+                          : song.status === 'generating'
                             ? 'bg-yellow-100 text-yellow-800'
                             : song.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
                       >
                         {song.status === 'completed'
                           ? 'เสร็จสิ้น'
                           : song.status === 'generating'
-                          ? 'กำลังสร้าง...'
-                          : song.status === 'failed'
-                          ? 'ล้มเหลว'
-                          : 'รอดำเนินการ'}
+                            ? 'กำลังสร้าง...'
+                            : song.status === 'failed'
+                              ? 'ล้มเหลว'
+                              : 'รอดำเนินการ'}
                       </span>
                     </div>
 

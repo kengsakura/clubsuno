@@ -16,6 +16,8 @@ export interface Profile {
   updated_at: string
 }
 
+export type SongType = 'original' | 'cover'
+
 export interface Song {
   id: string
   user_id: string
@@ -31,6 +33,8 @@ export interface Song {
   duration: number | null
   credits_used: number
   error_message: string | null
+  type: SongType
+  source_youtube_url: string | null
   created_at: string
   updated_at: string
 }
@@ -87,4 +91,21 @@ export interface SunoStatusResponse {
     response: SunoTaskData
     errorMessage?: string
   }
+}
+
+export interface CoverGenerateRequest {
+  uploadUrl: string
+  title?: string
+  style?: string
+  prompt?: string
+  customMode?: boolean
+  instrumental?: boolean
+  model?: 'V5' | 'V4_5PLUS' | 'V4_5' | 'V4_5ALL' | 'V4'
+  vocalGender?: 'f' | 'm'
+  negativeTags?: string
+  styleWeight?: number
+  weirdnessConstraint?: number
+  audioWeight?: number
+  personaId?: string
+  sourceYoutubeUrl?: string
 }
