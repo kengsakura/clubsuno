@@ -6,6 +6,7 @@ import { writeFile, unlink, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import ffmpegPath from 'ffmpeg-static'
 
 export async function POST(request: Request) {
     try {
@@ -64,7 +65,11 @@ export async function POST(request: Request) {
 
         // Run FFmpeg
         await new Promise<void>((resolve, reject) => {
-            const ffmpeg = spawn('ffmpeg', [
+            if (!ffmpegPath) {
+                reject(new Error('FFmpeg not found'))
+                return
+            }
+            const ffmpeg = spawn(ffmpegPath, [
                 '-i', inputPath,
                 '-filter:a', filters,
                 '-y',
