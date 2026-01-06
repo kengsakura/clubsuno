@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Profile, Song, SongType } from '@/lib/types'
+import AudioProcessor from '@/app/components/AudioProcessor'
 
 type CreationMode = 'original' | 'cover'
 
@@ -34,6 +35,12 @@ export default function StudentPage() {
   const [coverVocalGender, setCoverVocalGender] = useState<'f' | 'm'>('f')
   const [coverModel, setCoverModel] = useState('V4_5ALL')
   const [generatingCover, setGeneratingCover] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  
+  // Audio Processing State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [showProcessor, setShowProcessor] = useState(false)
 
   const router = useRouter()
   const supabase = createClient()
@@ -288,9 +295,66 @@ export default function StudentPage() {
     }
   }
 
+  const transcribeLyrics = async () => {
+    if (!downloadedAudioUrl) {
+      alert('กรุณาอัพโหลดไฟล์เสียงก่อน')
+      return
+    }
+
+    setTranscribing(true)
+    try {
+      const response = await fetch('/api/ai/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl: downloadedAudioUrl }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setCoverLyrics(data.lyrics)
+        alert('แกะเนื้อเพลงเสร็จแล้ว!')
+      } else {
+        const error = await response.json()
+        alert('เกิดข้อผิดพลาด: ' + error.error)
+      }
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาด: ' + error.message)
+    } finally {
+      setTranscribing(false)
+    }
+  }
+
+  const uploadFile = async (file: File) => {
+    setUploading(true)
+    setDownloadedAudioUrl(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/cover/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDownloadedAudioUrl(data.audioUrl)
+        alert('อัพโหลดเสร็จแล้ว!')
+      } else {
+        const error = await response.json()
+        alert('เกิดข้อผิดพลาด: ' + error.error)
+      }
+    } catch (error: any) {
+      alert('เกิดข้อผิดพลาด: ' + error.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const generateCover = async () => {
     if (!downloadedAudioUrl) {
-      alert('กรุณาดาวน์โหลดเพลงจาก YouTube ก่อน')
+      alert('กรุณาอัพโหลดไฟล์เสียง หรือดาวน์โหลดจาก YouTube ก่อน')
       return
     }
 
@@ -514,37 +578,89 @@ export default function StudentPage() {
             ) : (
               /* Cover Mode Form */
               <div className="space-y-4">
-                {/* YouTube URL Input */}
+                {/* File Upload or YouTube */}
                 <div className="p-4 bg-orange-50 rounded-lg">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    1. ดาวน์โหลดเพลงจาก YouTube
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    1. เลือกไฟล์เสียง
                   </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={youtubeUrl}
-                      onChange={(e) => setYoutubeUrl(e.target.value)}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                      placeholder="https://www.youtube.com/watch?v=..."
-                    />
-                    <button
-                      onClick={downloadFromYoutube}
-                      disabled={downloading || !youtubeUrl.trim()}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                    >
-                      {downloading ? '⏳ กำลังดาวน์โหลด...' : '⬇️ ดาวน์โหลด'}
-                    </button>
+
+                  {/* File Upload */}
+                  <div className="mb-3">
+                    <label className="block w-full cursor-pointer">
+                      <div className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-500 hover:bg-orange-100 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <span className="text-2xl">📁</span>
+                        <span className="text-orange-700 font-medium">
+                          {uploading ? 'กำลังอัพโหลด...' : 'คลิกเพื่อเลือกไฟล์ (MP3, WAV, M4A)'}
+                        </span>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".mp3,.wav,.m4a,audio/*"
+                        className="hidden"
+                        disabled={uploading}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setSelectedFile(file)
+                            setShowProcessor(true)
+                          }
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    เสียงจะถูกปรับ pitch +3 semitones อัตโนมัติ (ไฟล์ต้องไม่เกิน 8 นาที)
-                  </p>
+
+                  {showProcessor && selectedFile && (
+                    <AudioProcessor
+                      file={selectedFile}
+                      onCancel={() => {
+                        setShowProcessor(false)
+                        setSelectedFile(null)
+                      }}
+                      onProcessComplete={(audioUrl) => {
+                        setDownloadedAudioUrl(audioUrl)
+                        setShowProcessor(false)
+                        setSelectedFile(null)
+                      }}
+                    />
+                  )}
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 border-t border-orange-200"></div>
+                    <span className="text-sm text-gray-500">หรือ</span>
+                    <div className="flex-1 border-t border-orange-200"></div>
+                  </div>
+
+                  {/* YouTube URL */}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">
+                      ดาวน์โหลดจาก YouTube (อาจไม่ทำงานบน Vercel)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 text-sm"
+                        placeholder="https://www.youtube.com/watch?v=..."
+                      />
+                      <button
+                        onClick={downloadFromYoutube}
+                        disabled={downloading || !youtubeUrl.trim()}
+                        className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm"
+                      >
+                        {downloading ? '⏳...' : '⬇️'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Audio Preview */}
                 {downloadedAudioUrl && (
                   <div className="p-4 bg-green-50 rounded-lg">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ✅ ไฟล์เสียงที่ดาวน์โหลด (pitch +3)
+                      ✅ ไฟล์เสียงที่อัพโหลด
                     </label>
                     <audio controls className="w-full">
                       <source src={downloadedAudioUrl} type="audio/mpeg" />
@@ -597,15 +713,26 @@ export default function StudentPage() {
                 {/* Lyrics (only if not instrumental) */}
                 {!coverInstrumental && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      4. เนื้อร้อง
-                    </label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-sm font-medium text-gray-700">
+                        4. เนื้อร้อง
+                      </label>
+                      {downloadedAudioUrl && (
+                        <button
+                          onClick={transcribeLyrics}
+                          disabled={transcribing}
+                          className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 disabled:opacity-50"
+                        >
+                          {transcribing ? '⏳ กำลังแกะเนื้อเพลง...' : '🎤 แกะเนื้อเพลงด้วย AI'}
+                        </button>
+                      )}
+                    </div>
                     <textarea
                       value={coverLyrics}
                       onChange={(e) => setCoverLyrics(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                       rows={6}
-                      placeholder="ใส่เนื้อร้องที่ต้องการ..."
+                      placeholder="ใส่เนื้อร้องที่ต้องการ หรือกดปุ่ม 'แกะเนื้อเพลงด้วย AI' ด้านบน..."
                     />
                   </div>
                 )}
